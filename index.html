@@ -115,6 +115,12 @@
             <h2>Resumo da Dívida</h2>
             <div id="resumoDivida" style="font-size:1.2rem; color:#6200ea; font-weight:600; margin-top:1rem;"></div>
         </div>
+
+        <!-- DASHBOARD DE GASTOS DIÁRIOS -->
+        <div class="card">
+            <h2>Gastos Diários</h2>
+            <canvas id="graficoGastosDia" height="100"></canvas>
+        </div>
     </main>
 </div>
 
@@ -217,6 +223,8 @@ window.editarCompra = function(id) {
     }
 }
 
+let graficoGastosDia = null;
+
 onValue(comprasRef, (snapshot) => {
     const dados = snapshot.val();
     tabela.innerHTML = '';
@@ -224,6 +232,9 @@ onValue(comprasRef, (snapshot) => {
     let totalMesAtual = 0;
     const dadosMensais = {};
     const mesAtual = new Date().toISOString().slice(0, 7);
+
+    // NOVO: Agrupar gastos por dia
+    const gastosPorDia = {};
 
     if (dados) {
         for (let id in dados) {
@@ -254,6 +265,10 @@ onValue(comprasRef, (snapshot) => {
             if (mes === mesAtual) {
                 totalMesAtual += Number(valor);
             }
+
+            // Agrupa por dia
+            if (!gastosPorDia[data]) gastosPorDia[data] = 0;
+            gastosPorDia[data] += Number(valor);
         }
     }
 
@@ -263,6 +278,74 @@ onValue(comprasRef, (snapshot) => {
         Total de compras: <strong>R$ ${total.toFixed(2)}</strong><br>
         Total do mês atual: <strong>R$ ${totalMesAtual.toFixed(2)}</strong>
     `;
+
+    // DASHBOARD: Atualiza o gráfico de gastos diários
+    const ctx = document.getElementById('graficoGastosDia').getContext('2d');
+    const labels = Object.keys(gastosPorDia).sort();
+    const valores = labels.map(dia => gastosPorDia[dia]);
+
+    if (graficoGastosDia) graficoGastosDia.destroy();
+
+    // Gradiente para as barras
+    const gradient = ctx.createLinearGradient(0, 0, 0, 300);
+    gradient.addColorStop(0, '#7c43bd');
+    gradient.addColorStop(1, '#b39ddb');
+
+    graficoGastosDia = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels,
+            datasets: [{
+                label: 'Gasto Diário (R$)',
+                data: valores,
+                backgroundColor: gradient,
+                borderRadius: 12,
+                borderSkipped: false,
+                hoverBackgroundColor: '#6200ea',
+                barPercentage: 0.7,
+                categoryPercentage: 0.6,
+            }]
+        },
+        options: {
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    backgroundColor: '#fff',
+                    titleColor: '#6200ea',
+                    bodyColor: '#333',
+                    borderColor: '#7c43bd',
+                    borderWidth: 1,
+                    callbacks: {
+                        label: function(context) {
+                            return ` R$ ${context.parsed.y.toFixed(2)}`;
+                        }
+                    }
+                },
+                title: {
+                    display: true,
+                    text: 'Gastos por Dia',
+                    color: '#6200ea',
+                    font: { size: 18, weight: 'bold' }
+                }
+            },
+            layout: {
+                padding: 20
+            },
+            scales: {
+                x: {
+                    title: { display: true, text: 'Data', color: '#7c43bd', font: { weight: 'bold' } },
+                    ticks: { color: '#333', font: { size: 13 } },
+                    grid: { display: false }
+                },
+                y: {
+                    title: { display: true, text: 'Valor (R$)', color: '#7c43bd', font: { weight: 'bold' } },
+                    ticks: { color: '#333', font: { size: 13 } },
+                    grid: { color: '#ede7f6' },
+                    beginAtZero: true
+                }
+            }
+        }
+    });
 });
 
 // Função para gerar "Nota Fiscal" (NF) para impressão
