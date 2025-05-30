@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Controle de Compras</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            font-family: 'Segoe UI', 'Roboto', Arial, sans-serif;
+            margin: 0;
+            background: linear-gradient(120deg, #f4f4f4 60%, #e3e0ff 100%);
+            color: #333;
+            min-height: 100vh;
+        }
+        .login-container {
+            max-width: 350px;
+            margin: 8vh auto;
+            background: #fff;
+            border-radius: 16px;
+            box-shadow: 0 4px 24px rgba(98,0,234,0.10), 0 1.5px 4px rgba(0,0,0,0.04);
+            padding: 2.5rem 2rem 2rem 2rem;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .login-container h2 {
+            color: #6200ea;
+            margin-bottom: 1.5rem;
+        }
+        .login-container input {
+            width: 100%;
+            padding: 0.7rem 1rem;
+            margin-bottom: 1rem;
+            border-radius: 10px;
+            border: 1px solid #d1c4e9;
+            font-size: 1rem;
+            outline: none;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+        .login-container input:focus {
+            border-color: #6200ea;
+            box-shadow: 0 0 0 2px #e3e0ff;
+        }
+        .login-container button {
+            width: 100%;
+            background: linear-gradient(90deg, #6200ea 60%, #7c43bd 100%);
+            color: white;
+            cursor: pointer;
+            border: none;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+            border-radius: 10px;
+            padding: 0.7rem 1rem;
+            font-size: 1rem;
+            box-shadow: 0 2px 8px rgba(98,0,234,0.08);
+            transition: background 0.2s, transform 0.1s;
+        }
+        .login-container button:hover {
+            background: linear-gradient(90deg, #7c43bd 60%, #6200ea 100%);
+            transform: translateY(-2px) scale(1.03);
+        }
+        .login-error {
+            color: #c2185b;
+            font-size: 0.98rem;
+            margin-bottom: 1rem;
+            text-align: center;
+        }
+        /* Esconde o conteúdo principal até o login */
+        #conteudoPrincipal { display: none; }
+        header, main { transition: filter 0.3s; }
+    </style>
+</head>
+<body>
+
+<div id="loginTela" class="login-container">
+    <h2>Login</h2>
+    <div id="loginErro" class="login-error" style="display:none;"></div>
+    <input type="text" id="loginUsuario" placeholder="E-mail" autocomplete="username">
+    <input type="password" id="loginSenha" placeholder="Senha" autocomplete="current-password">
+    <button onclick="fazerLogin()">Entrar</button>
+</div>
+
+<div id="conteudoPrincipal">
+    <header>
+        <h1>Controle de Compras</h1>
+    </header>
+
+    <main>
+        <div class="card">
+            <h2>Cadastrar Compra</h2>
+            <input type="number" id="valor" placeholder="Valor da compra">
+            <input type="text" id="descricao" placeholder="Descrição">
+            <input type="date" id="data">
+            <button onclick="adicionarCompra()">Adicionar</button>
+        </div>
+
+        <div class="card">
+            <h2>Lista de Compras</h2>
+            <button id="btnGerarNF" style="float:right; margin-bottom:10px;">Gerar NF</button>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Valor (R$)</th>
+                        <th>Descrição</th>
+                        <th>Data</th>
+                        <th>Ação</th>
+                    </tr>
+                </thead>
+                <tbody id="tabelaCompras"></tbody>
+            </table>
+        </div>
+
+        <div class="card">
+            <h2>Resumo da Dívida</h2>
+            <div id="resumoDivida" style="font-size:1.2rem; color:#6200ea; font-weight:600; margin-top:1rem;"></div>
+        </div>
+    </main>
+</div>
+
+<script type="module">
+// Firebase SDK
+import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.1/firebase-app.js";
+import { getDatabase, ref, push, onValue, remove } from "https://www.gstatic.com/firebasejs/9.22.1/firebase-database.js";
+import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/9.22.1/firebase-auth.js";
+
+const firebaseConfig = {
+    apiKey: "AIzaSyCuGGIRqkGTPQ3AZNM-Rtj8odAnyldR0wU",
+    authDomain: "controle-de-compras-6e585.firebaseapp.com",
+    databaseURL: "https://controle-de-compras-6e585-default-rtdb.firebaseio.com",
+    projectId: "controle-de-compras-6e585",
+    storageBucket: "controle-de-compras-6e585.appspot.com",
+    messagingSenderId: "463033477031",
+    appId: "1:463033477031:web:84a0193044e0eaef8f7882",
+    measurementId: "G-J22B0ZNWMV"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getDatabase(app);
+const auth = getAuth(app);
+
+const comprasRef = ref(db, 'compras');
+
+const valorInput = document.getElementById('valor');
+const descricaoInput = document.getElementById('descricao');
+const dataInput = document.getElementById('data');
+const tabela = document.getElementById('tabelaCompras');
+
+// Função de login com Firebase Auth
+window.fazerLogin = function() {
+    const usuario = document.getElementById('loginUsuario').value.trim();
+    const senha = document.getElementById('loginSenha').value;
+    const erro = document.getElementById('loginErro');
+
+    signInWithEmailAndPassword(auth, usuario, senha)
+        .then(() => {
+            document.getElementById('loginTela').style.display = 'none';
+            document.getElementById('conteudoPrincipal').style.display = 'block';
+        })
+        .catch((error) => {
+            erro.innerText = "Usuário ou senha inválidos!";
+            erro.style.display = 'block';
+        });
+};
+
+// Torna as funções globais para uso no HTML
+window.adicionarCompra = function() {
+    const valor = parseFloat(valorInput.value);
+    const descricao = descricaoInput.value;
+    const data = dataInput.value;
+
+    if (isNaN(valor) || !descricao || !data) {
+        alert("Preencha todos os campos!");
+        return;
+    }
+
+    push(comprasRef, { valor, descricao, data });
+
+    valorInput.value = '';
+    descricaoInput.value = '';
+    dataInput.value = '';
+}
+
+window.deletarCompra = function(id) {
+    remove(ref(db, 'compras/' + id));
+}
+
+window.editarCompra = function(id) {
+    const compra = JSON.parse(document.getElementById(`compra-${id}`).dataset.compra);
+    valorInput.value = compra.valor;
+    descricaoInput.value = compra.descricao;
+    dataInput.value = compra.data;
+
+    // Troca o botão de adicionar para salvar edição
+    const btn = document.querySelector('button[onclick="adicionarCompra()"]');
+    btn.textContent = "Salvar";
+    btn.onclick = function() {
+        const valor = parseFloat(valorInput.value);
+        const descricao = descricaoInput.value;
+        const data = dataInput.value;
+
+        if (isNaN(valor) || !descricao || !data) {
+            alert("Preencha todos os campos!");
+            return;
+        }
+
+        // Atualiza no Firebase
+        import("https://www.gstatic.com/firebasejs/9.22.1/firebase-database.js").then(({ ref, set }) => {
+            set(ref(db, 'compras/' + id), { valor, descricao, data });
+        });
+
+        valorInput.value = '';
+        descricaoInput.value = '';
+        dataInput.value = '';
+        btn.textContent = "Adicionar";
+        btn.onclick = window.adicionarCompra;
+    }
+}
+
+onValue(comprasRef, (snapshot) => {
+    const dados = snapshot.val();
+    tabela.innerHTML = '';
+    let total = 0;
+    let totalMesAtual = 0;
+    const dadosMensais = {};
+    const mesAtual = new Date().toISOString().slice(0, 7);
+
+    if (dados) {
+        for (let id in dados) {
+            const { valor, descricao, data } = dados[id];
+
+            const tr = document.createElement('tr');
+            tr.id = `compra-${id}`;
+            tr.dataset.compra = JSON.stringify({ valor, descricao, data });
+            tr.innerHTML = `
+                <td>R$ ${Number(valor).toFixed(2)}</td>
+                <td>${descricao}</td>
+                <td>${data}</td>
+                <td>
+                    <button onclick="editarCompra('${id}')">✏️</button>
+                    <button onclick="deletarCompra('${id}')">🗑️</button>
+                </td>
+            `;
+            tabela.appendChild(tr);
+
+            total += Number(valor);
+
+            const mes = data.slice(0,7);
+            if (!dadosMensais[mes]) {
+                dadosMensais[mes] = 0;
+            }
+            dadosMensais[mes] += Number(valor);
+
+            if (mes === mesAtual) {
+                totalMesAtual += Number(valor);
+            }
+        }
+    }
+
+    // Exibe o resumo da dívida
+    const resumoDivida = document.getElementById('resumoDivida');
+    resumoDivida.innerHTML = `
+        Total de compras: <strong>R$ ${total.toFixed(2)}</strong><br>
+        Total do mês atual: <strong>R$ ${totalMesAtual.toFixed(2)}</strong>
+    `;
+});
+
+// Função para gerar "Nota Fiscal" (NF) para impressão
+window.gerarNF = function() {
+    // Coleta os dados da tabela
+    let linhas = [];
+    const trs = document.querySelectorAll('#tabelaCompras tr');
+    trs.forEach(tr => {
+        const tds = tr.querySelectorAll('td');
+        if (tds.length >= 3) {
+            linhas.push({
+                valor: tds[0].innerText,
+                descricao: tds[1].innerText,
+                data: tds[2].innerText
+            });
+        }
+    });
+
+    if (linhas.length === 0) {
+        alert("Nenhuma compra para gerar NF.");
+        return;
+    }
+
+    // Monta o HTML da NF para impressão
+    let htmlNF = `
+        <div style="font-family:monospace;max-width:600px;margin:auto;">
+            <h2 style="text-align:center;">NOTA FISCAL SIMPLIFICADA</h2>
+            <table border="1" cellspacing="0" cellpadding="8" style="width:100%;border-collapse:collapse;">
+                <thead>
+                    <tr>
+                        <th>Valor (R$)</th>
+                        <th>Descrição</th>
+                        <th>Data</th>
+                    </tr>
+                </thead>
+                <tbody>
+    `;
+    linhas.forEach(l => {
+        htmlNF += `
+            <tr>
+                <td>${l.valor}</td>
+                <td>${l.descricao}</td>
+                <td>${l.data}</td>
+            </tr>
+        `;
+    });
+    htmlNF += `
+                </tbody>
+            </table>
+            <p style="text-align:right;margin-top:20px;">
+                <strong>Total: R$ ${linhas.reduce((soma, l) => soma + parseFloat(l.valor.replace('R$','').replace(',','.')), 0).toFixed(2)}</strong>
+            </p>
+            <p style="text-align:center;font-size:0.9rem;color:#888;">Documento gerado em ${new Date().toLocaleString('pt-BR')}</p>
+        </div>
+    `;
+
+    // Abre uma nova janela para impressão
+    const win = window.open('', '', 'width=800,height=600');
+    win.document.write(`
+        <html>
+        <head>
+            <title>Nota Fiscal Simplificada</title>
+        </head>
+        <body onload="window.print();window.close();">
+            ${htmlNF}
+        </body>
+        </html>
+    `);
+    win.document.close();
+}
+
+// Adiciona o evento ao botão após o DOM carregar
+document.getElementById('btnGerarNF').onclick = window.gerarNF;
+</script>
+
+</body>
+</html>
