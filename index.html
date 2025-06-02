@@ -66,9 +66,15 @@
             margin-bottom: 1rem;
             text-align: center;
         }
-        /* Esconde o conteúdo principal até o login */
         #conteudoPrincipal { display: none; }
         header, main { transition: filter 0.3s; }
+        .card { background: #fff; border-radius: 14px; box-shadow: 0 2px 12px rgba(98,0,234,0.07); margin: 24px 0; padding: 2rem; }
+        .card h2 { color: #7c43bd; margin-bottom: 1.5rem; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px;}
+        th, td { padding: 8px 12px; border-bottom: 1px solid #ede7f6; text-align: left;}
+        th { color: #6200ea; background: #ede7f6;}
+        tr:last-child td { border-bottom: none;}
+        button[onclick], #btnGerarNF, #btnGerarNFsMeses, #btnGerarNFMes { margin-right: 6px; }
     </style>
 </head>
 <body>
@@ -97,7 +103,14 @@
 
         <div class="card">
             <h2>Lista de Compras</h2>
+            <!-- NOVOS BOTÕES E SELETOR -->
+            <button id="btnGerarNFsMeses" style="float:right; margin-bottom:10px; margin-right:10px;">Gerar NFs por Mês</button>
+            <label for="seletorMes" style="margin-right:6px;">Mês:</label>
+            <select id="seletorMes"></select>
+            <button id="btnGerarNFMes">Gerar NF do Mês</button>
+            <!-- Botão padrão -->
             <button id="btnGerarNF" style="float:right; margin-bottom:10px;">Gerar NF</button>
+
             <table>
                 <thead>
                     <tr>
@@ -116,7 +129,6 @@
             <div id="resumoDivida" style="font-size:1.2rem; color:#6200ea; font-weight:600; margin-top:1rem;"></div>
         </div>
 
-        <!-- DASHBOARD DE GASTOS DIÁRIOS -->
         <div class="card">
             <h2>Gastos Diários</h2>
             <canvas id="graficoGastosDia" height="100"></canvas>
@@ -144,7 +156,6 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
 const auth = getAuth(app);
-
 const comprasRef = ref(db, 'compras');
 
 const valorInput = document.getElementById('valor');
@@ -169,7 +180,6 @@ window.fazerLogin = function() {
         });
 };
 
-// Torna as funções globais para uso no HTML
 window.adicionarCompra = function() {
     const valor = parseFloat(valorInput.value);
     const descricao = descricaoInput.value;
@@ -197,7 +207,6 @@ window.editarCompra = function(id) {
     descricaoInput.value = compra.descricao;
     dataInput.value = compra.data;
 
-    // Troca o botão de adicionar para salvar edição
     const btn = document.querySelector('button[onclick="adicionarCompra()"]');
     btn.textContent = "Salvar";
     btn.onclick = function() {
@@ -210,7 +219,6 @@ window.editarCompra = function(id) {
             return;
         }
 
-        // Atualiza no Firebase
         import("https://www.gstatic.com/firebasejs/9.22.1/firebase-database.js").then(({ ref, set }) => {
             set(ref(db, 'compras/' + id), { valor, descricao, data });
         });
@@ -225,6 +233,167 @@ window.editarCompra = function(id) {
 
 let graficoGastosDia = null;
 
+// Função para preencher o seletor de meses
+function atualizarSeletorMeses(dados) {
+    const seletor = document.getElementById('seletorMes');
+    const meses = new Set();
+    if (dados) {
+        Object.values(dados).forEach(compra => {
+            if (compra.data) meses.add(compra.data.slice(0,7));
+        });
+    }
+    seletor.innerHTML = '';
+    [...meses].sort().forEach(mes => {
+        const opt = document.createElement('option');
+        opt.value = mes;
+        opt.textContent = mes;
+        seletor.appendChild(opt);
+    });
+}
+
+// Função para gerar NF de um mês específico
+window.gerarNFPorMes = function(mes, dados) {
+    const linhas = [];
+    for (let id in dados) {
+        const compra = dados[id];
+        if (compra.data && compra.data.slice(0,7) === mes) {
+            linhas.push({
+                valor: `R$ ${Number(compra.valor).toFixed(2)}`,
+                descricao: compra.descricao,
+                data: compra.data
+            });
+        }
+    }
+    if (linhas.length === 0) {
+        alert("Nenhuma compra para gerar NF deste mês.");
+        return;
+    }
+    let htmlNF = `
+        <div style="font-family:monospace;max-width:600px;margin:auto;">
+            <h2 style="text-align:center;">NOTA FISCAL SIMPLIFICADA - ${mes}</h2>
+            <table border="1" cellspacing="0" cellpadding="8" style="width:100%;border-collapse:collapse;">
+                <thead>
+                    <tr>
+                        <th>Valor (R$)</th>
+                        <th>Descrição</th>
+                        <th>Data</th>
+                    </tr>
+                </thead>
+                <tbody>
+    `;
+    linhas.forEach(l => {
+        htmlNF += `
+            <tr>
+                <td>${l.valor}</td>
+                <td>${l.descricao}</td>
+                <td>${l.data}</td>
+            </tr>
+        `;
+    });
+    htmlNF += `
+                </tbody>
+            </table>
+            <p style="text-align:right;margin-top:20px;">
+                <strong>Total: R$ ${linhas.reduce((soma, l) => soma + parseFloat(l.valor.replace('R$','').replace(',','.')), 0).toFixed(2)}</strong>
+            </p>
+            <p style="text-align:center;font-size:0.9rem;color:#888;">Documento gerado em ${new Date().toLocaleString('pt-BR')}</p>
+        </div>
+    `;
+    const win = window.open('', '', 'width=800,height=600');
+    win.document.write(`
+        <html>
+        <head><title>Nota Fiscal Simplificada - ${mes}</title></head>
+        <body onload="window.print();window.close();">
+            ${htmlNF}
+        </body>
+        </html>
+    `);
+    win.document.close();
+}
+
+// Função para gerar todas as NFs por mês
+window.gerarNFsMeses = function(dados) {
+    const meses = new Set();
+    for (let id in dados) {
+        const compra = dados[id];
+        if (compra.data) meses.add(compra.data.slice(0,7));
+    }
+    if (meses.size === 0) {
+        alert("Nenhuma compra para gerar NFs.");
+        return;
+    }
+    [...meses].sort().forEach(mes => {
+        window.gerarNFPorMes(mes, dados);
+    });
+}
+
+// Função padrão para gerar NF de todas as compras
+window.gerarNF = function() {
+    let linhas = [];
+    const trs = document.querySelectorAll('#tabelaCompras tr');
+    trs.forEach(tr => {
+        const tds = tr.querySelectorAll('td');
+        if (tds.length >= 3) {
+            linhas.push({
+                valor: tds[0].innerText,
+                descricao: tds[1].innerText,
+                data: tds[2].innerText
+            });
+        }
+    });
+
+    if (linhas.length === 0) {
+        alert("Nenhuma compra para gerar NF.");
+        return;
+    }
+
+    let htmlNF = `
+        <div style="font-family:monospace;max-width:600px;margin:auto;">
+            <h2 style="text-align:center;">NOTA FISCAL SIMPLIFICADA</h2>
+            <table border="1" cellspacing="0" cellpadding="8" style="width:100%;border-collapse:collapse;">
+                <thead>
+                    <tr>
+                        <th>Valor (R$)</th>
+                        <th>Descrição</th>
+                        <th>Data</th>
+                    </tr>
+                </thead>
+                <tbody>
+    `;
+    linhas.forEach(l => {
+        htmlNF += `
+            <tr>
+                <td>${l.valor}</td>
+                <td>${l.descricao}</td>
+                <td>${l.data}</td>
+            </tr>
+        `;
+    });
+    htmlNF += `
+                </tbody>
+            </table>
+            <p style="text-align:right;margin-top:20px;">
+                <strong>Total: R$ ${linhas.reduce((soma, l) => soma + parseFloat(l.valor.replace('R$','').replace(',','.')), 0).toFixed(2)}</strong>
+            </p>
+            <p style="text-align:center;font-size:0.9rem;color:#888;">Documento gerado em ${new Date().toLocaleString('pt-BR')}</p>
+        </div>
+    `;
+
+    const win = window.open('', '', 'width=800,height=600');
+    win.document.write(`
+        <html>
+        <head>
+            <title>Nota Fiscal Simplificada</title>
+        </head>
+        <body onload="window.print();window.close();">
+            ${htmlNF}
+        </body>
+        </html>
+    `);
+    win.document.close();
+}
+
+// DASHBOARD, tabela, resumo e eventos
 onValue(comprasRef, (snapshot) => {
     const dados = snapshot.val();
     tabela.innerHTML = '';
@@ -233,7 +402,6 @@ onValue(comprasRef, (snapshot) => {
     const dadosMensais = {};
     const mesAtual = new Date().toISOString().slice(0, 7);
 
-    // NOVO: Agrupar gastos por dia
     const gastosPorDia = {};
 
     if (dados) {
@@ -266,27 +434,22 @@ onValue(comprasRef, (snapshot) => {
                 totalMesAtual += Number(valor);
             }
 
-            // Agrupa por dia
             if (!gastosPorDia[data]) gastosPorDia[data] = 0;
             gastosPorDia[data] += Number(valor);
         }
     }
 
-    // Exibe o resumo da dívida
     const resumoDivida = document.getElementById('resumoDivida');
     resumoDivida.innerHTML = `
         Total de compras: <strong>R$ ${total.toFixed(2)}</strong><br>
         Total do mês atual: <strong>R$ ${totalMesAtual.toFixed(2)}</strong>
     `;
 
-    // DASHBOARD: Atualiza o gráfico de gastos diários
     const ctx = document.getElementById('graficoGastosDia').getContext('2d');
     const labels = Object.keys(gastosPorDia).sort();
     const valores = labels.map(dia => gastosPorDia[dia]);
-
     if (graficoGastosDia) graficoGastosDia.destroy();
 
-    // Gradiente para as barras
     const gradient = ctx.createLinearGradient(0, 0, 0, 300);
     gradient.addColorStop(0, '#7c43bd');
     gradient.addColorStop(1, '#b39ddb');
@@ -328,9 +491,7 @@ onValue(comprasRef, (snapshot) => {
                     font: { size: 18, weight: 'bold' }
                 }
             },
-            layout: {
-                padding: 20
-            },
+            layout: { padding: 20 },
             scales: {
                 x: {
                     title: { display: true, text: 'Data', color: '#7c43bd', font: { weight: 'bold' } },
@@ -346,78 +507,16 @@ onValue(comprasRef, (snapshot) => {
             }
         }
     });
+
+    atualizarSeletorMeses(dados);
+
+    document.getElementById('btnGerarNFsMeses').onclick = () => window.gerarNFsMeses(dados);
+    document.getElementById('btnGerarNFMes').onclick = () => {
+        const mes = document.getElementById('seletorMes').value;
+        window.gerarNFPorMes(mes, dados);
+    };
 });
 
-// Função para gerar "Nota Fiscal" (NF) para impressão
-window.gerarNF = function() {
-    // Coleta os dados da tabela
-    let linhas = [];
-    const trs = document.querySelectorAll('#tabelaCompras tr');
-    trs.forEach(tr => {
-        const tds = tr.querySelectorAll('td');
-        if (tds.length >= 3) {
-            linhas.push({
-                valor: tds[0].innerText,
-                descricao: tds[1].innerText,
-                data: tds[2].innerText
-            });
-        }
-    });
-
-    if (linhas.length === 0) {
-        alert("Nenhuma compra para gerar NF.");
-        return;
-    }
-
-    // Monta o HTML da NF para impressão
-    let htmlNF = `
-        <div style="font-family:monospace;max-width:600px;margin:auto;">
-            <h2 style="text-align:center;">NOTA FISCAL SIMPLIFICADA</h2>
-            <table border="1" cellspacing="0" cellpadding="8" style="width:100%;border-collapse:collapse;">
-                <thead>
-                    <tr>
-                        <th>Valor (R$)</th>
-                        <th>Descrição</th>
-                        <th>Data</th>
-                    </tr>
-                </thead>
-                <tbody>
-    `;
-    linhas.forEach(l => {
-        htmlNF += `
-            <tr>
-                <td>${l.valor}</td>
-                <td>${l.descricao}</td>
-                <td>${l.data}</td>
-            </tr>
-        `;
-    });
-    htmlNF += `
-                </tbody>
-            </table>
-            <p style="text-align:right;margin-top:20px;">
-                <strong>Total: R$ ${linhas.reduce((soma, l) => soma + parseFloat(l.valor.replace('R$','').replace(',','.')), 0).toFixed(2)}</strong>
-            </p>
-            <p style="text-align:center;font-size:0.9rem;color:#888;">Documento gerado em ${new Date().toLocaleString('pt-BR')}</p>
-        </div>
-    `;
-
-    // Abre uma nova janela para impressão
-    const win = window.open('', '', 'width=800,height=600');
-    win.document.write(`
-        <html>
-        <head>
-            <title>Nota Fiscal Simplificada</title>
-        </head>
-        <body onload="window.print();window.close();">
-            ${htmlNF}
-        </body>
-        </html>
-    `);
-    win.document.close();
-}
-
-// Adiciona o evento ao botão após o DOM carregar
 document.getElementById('btnGerarNF').onclick = window.gerarNF;
 </script>
 
